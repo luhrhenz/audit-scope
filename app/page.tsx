@@ -45,6 +45,19 @@ export default function Home() {
     setError(null);
     setReport(null);
 
+    const lineCount = contractCode.split("\n").length;
+    const contractLength = contractCode.length;
+    const solidityVersionMatch = contractCode.match(/pragma\s+solidity\s+([^;]+)/);
+    const solidityVersion = solidityVersionMatch ? solidityVersionMatch[1].trim() : "unknown";
+
+    if (typeof window !== "undefined" && window.pendo) {
+      window.pendo.track("contract_analysis_submitted", {
+        contractLength,
+        lineCount,
+        solidityVersion,
+      });
+    }
+
     try {
       const res = await fetch("/api/scope", {
         method: "POST",
@@ -56,13 +69,45 @@ export default function Home() {
 
       if (!res.ok) {
         setError(data.error ?? "An unknown error occurred.");
+        if (typeof window !== "undefined" && window.pendo) {
+          window.pendo.track("audit_report_generation_failed", {
+            errorMessage: String(data.error ?? "unknown").substring(0, 100),
+            errorType: "api_error",
+            contractLength,
+            lineCount,
+          });
+        }
         return;
       }
 
       setActiveModel(data._model ?? null);
       setReport(data);
+
+      if (typeof window !== "undefined" && window.pendo) {
+        window.pendo.track("audit_report_generated", {
+          modelUsed: data._model ?? "unknown",
+          riskAreaCount: data.riskAreas?.length ?? 0,
+          highSeverityCount: data.riskAreas?.filter((r: { severity: string }) => r.severity === "high").length ?? 0,
+          mediumSeverityCount: data.riskAreas?.filter((r: { severity: string }) => r.severity === "medium").length ?? 0,
+          lowSeverityCount: data.riskAreas?.filter((r: { severity: string }) => r.severity === "low").length ?? 0,
+          attackSurfaceCount: data.attackSurface?.length ?? 0,
+          vulnerabilityPatternsDetectedCount: data.vulnerabilityPatterns?.filter((v: { present: boolean }) => v.present).length ?? 0,
+          keyVariablesCount: data.keyVariables?.length ?? 0,
+          auditFocusCount: data.auditFocus?.length ?? 0,
+          contractLength,
+          lineCount,
+        });
+      }
     } catch {
       setError("Network error — check your connection and try again.");
+      if (typeof window !== "undefined" && window.pendo) {
+        window.pendo.track("audit_report_generation_failed", {
+          errorMessage: "network_error",
+          errorType: "network_error",
+          contractLength,
+          lineCount,
+        });
+      }
     } finally {
       setLoading(false);
     }

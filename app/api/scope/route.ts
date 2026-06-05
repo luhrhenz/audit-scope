@@ -116,6 +116,29 @@ Return ONLY valid JSON, no markdown, no backticks, no preamble:
   ]
 }`;
 
+const PENDO_TRACK_URL = "https://data.pendo.io/data/track";
+const PENDO_INTEGRATION_KEY = "60861887-45d6-42a9-99c3-c4a7d429a6b9";
+
+function trackPendoEvent(event: string, properties: Record<string, unknown>) {
+  fetch(PENDO_TRACK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-pendo-integration-key": PENDO_INTEGRATION_KEY,
+    },
+    body: JSON.stringify({
+      type: "track",
+      event,
+      visitorId: "system",
+      accountId: "system",
+      timestamp: Date.now(),
+      properties,
+    }),
+  }).catch((err) => {
+    console.warn("Pendo track event failed:", err);
+  });
+}
+
 // Round-robin index persists for the lifetime of the server process
 let groqModelIndex = 0;
 const GROQ_MODELS = ["qwen/qwen3-32b", "llama-3.3-70b-versatile"] as const;
@@ -214,12 +237,24 @@ export async function POST(req: NextRequest) {
       rawText = await callGroq(contract, primaryModel);
     } catch (primaryErr) {
       console.warn(`${primaryModel} failed, trying ${fallbackModel}:`, primaryErr);
+      trackPendoEvent("ai_model_fallback_used", {
+        primaryModel,
+        fallbackModel,
+        usedModel: fallbackModel,
+        failureReason: primaryErr instanceof Error ? primaryErr.message.substring(0, 200) : "unknown",
+      });
       // 2. Try the other Groq model
       try {
         rawText = await callGroq(contract, fallbackModel);
         usedModel = fallbackModel;
       } catch (fallbackErr) {
         console.warn(`${fallbackModel} also failed, trying Gemini:`, fallbackErr);
+        trackPendoEvent("ai_model_fallback_used", {
+          primaryModel: fallbackModel,
+          fallbackModel: "gemini-2.0-flash",
+          usedModel: "gemini-2.0-flash",
+          failureReason: fallbackErr instanceof Error ? fallbackErr.message.substring(0, 200) : "unknown",
+        });
         // 3. Last resort: Gemini
         rawText = await callGemini(contract);
         usedModel = "gemini-2.0-flash";
