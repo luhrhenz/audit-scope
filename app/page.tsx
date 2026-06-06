@@ -47,6 +47,12 @@ export default function Home() {
     setError(null);
     setReport(null);
 
+    // Track button click
+    window.pendo?.track("Generate scope clicks", {
+      contractLines: contractCode.split("\n").length,
+      contractChars: contractCode.length,
+    });
+
     try {
       const res = await fetch("/api/scope", {
         method: "POST",
@@ -63,6 +69,13 @@ export default function Home() {
 
       setActiveModel(data._model ?? null);
       setReport(data);
+
+      // Track successful report generation
+      window.pendo?.track("Audit reports generated", {
+        model: data._model,
+        riskCount: data.riskAreas?.length ?? 0,
+        highCount: data.riskAreas?.filter((r: { severity: string }) => r.severity === "high").length ?? 0,
+      });
     } catch {
       setError("Network error — check your connection and try again.");
     } finally {
@@ -71,6 +84,7 @@ export default function Home() {
   }
 
   function handleClear() {
+    window.pendo?.track("Clear");
     setContractCode("");
     setReport(null);
     setActiveModel(null);
@@ -137,7 +151,14 @@ export default function Home() {
 
             <textarea
               value={contractCode}
-              onChange={(e) => setContractCode(e.target.value)}
+              onChange={(e) => {
+                const prev = contractCode;
+                setContractCode(e.target.value);
+                // Track first time user pastes/types a contract
+                if (!prev && e.target.value) {
+                  window.pendo?.track("Contract Input");
+                }
+              }}
               placeholder={PLACEHOLDER}
               spellCheck={false}
               className="h-48 sm:h-72 w-full resize-y rounded-xl border border-zinc-200 dark:border-zinc-700/50 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-300 dark:placeholder-zinc-700 outline-none focus:border-violet-400 dark:focus:border-violet-500/60 focus:ring-1 focus:ring-violet-400/30 dark:focus:ring-violet-500/30 transition-all"
