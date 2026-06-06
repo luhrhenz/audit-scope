@@ -59,7 +59,7 @@ const SEVERITY_BADGE: Record<string, string> = {
 
 function Section({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-white dark:bg-zinc-900 p-5 flex flex-col gap-3 shadow-sm dark:shadow-none">
+    <div className="rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-white dark:bg-zinc-900 p-4 sm:p-5 flex flex-col gap-3 shadow-sm dark:shadow-none">
       <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
         <span className="text-base">{icon}</span>
         {title}
@@ -87,7 +87,7 @@ function InnerCard({ children }: { children: React.ReactNode }) {
 
 export default function ReportCard({ report }: { report: AuditReport }) {
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2">
 
       {/* Summary — full width */}
       <div className="lg:col-span-2">
@@ -102,12 +102,14 @@ export default function ReportCard({ report }: { report: AuditReport }) {
           <div className="flex flex-col gap-3">
             {report.riskAreas.map((r, i) => (
               <div key={i} className={`rounded-lg border px-4 py-3 flex flex-col gap-2 ${SEVERITY_STYLES[r.severity] ?? SEVERITY_STYLES.low}`}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${SEVERITY_BADGE[r.severity] ?? SEVERITY_BADGE.low}`}>
-                    {r.severity}
-                  </span>
-                  <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{r.title}</span>
-                  <code className="ml-auto text-[11px] text-violet-600 dark:text-violet-400 font-mono">{r.function}</code>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:flex-wrap sm:gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ${SEVERITY_BADGE[r.severity] ?? SEVERITY_BADGE.low}`}>
+                      {r.severity}
+                    </span>
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{r.title}</span>
+                  </div>
+                  <code className="text-[11px] text-violet-600 dark:text-violet-400 font-mono sm:ml-auto">{r.function}</code>
                 </div>
                 <div className="flex flex-col gap-1 pl-1">
                   <p className="text-xs text-zinc-700 dark:text-zinc-300 leading-relaxed">

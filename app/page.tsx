@@ -84,23 +84,23 @@ export default function Home() {
       <div className="relative z-10 flex flex-col min-h-screen">
         {/* Header */}
         <header className="border-b border-zinc-200 dark:border-zinc-800 bg-white/80 dark:bg-zinc-950/80 backdrop-blur sticky top-0 z-20">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-3">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-sm font-black text-white shadow-lg shadow-violet-900/40">
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-5 py-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-sm font-black text-white shadow-lg shadow-violet-900/40">
                 A
               </div>
               <div>
                 <span className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">AuditScope</span>
-                <span className="ml-2 hidden text-[10px] text-zinc-400 dark:text-zinc-500 sm:inline">
+                <span className="ml-2 hidden text-[10px] text-zinc-400 dark:text-zinc-500 lg:inline">
                   Smart Contract Audit Scoping Tool
                 </span>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 tracking-wide">
+              <span className="hidden sm:inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400 tracking-wide">
                 Cairo support coming soon
               </span>
-              <span className="rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+              <span className="hidden sm:inline-flex rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-2.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
                 Solidity
               </span>
               <ThemeToggle />
@@ -108,10 +108,10 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-6xl px-5 py-10 flex flex-col gap-8 flex-1">
+        <main className="mx-auto w-full max-w-6xl px-4 sm:px-5 py-6 sm:py-10 flex flex-col gap-6 sm:gap-8 flex-1">
           {/* Hero */}
           <div className="text-center">
-            <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-100 sm:text-4xl">
+            <h1 className="text-2xl font-extrabold tracking-tight text-zinc-900 dark:text-zinc-100 sm:text-3xl lg:text-4xl">
               Generate Your Audit Scope
             </h1>
             <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-500">
@@ -120,7 +120,7 @@ export default function Home() {
           </div>
 
           {/* Input Section */}
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-white dark:bg-zinc-900 p-5 flex flex-col gap-4 shadow-sm dark:shadow-none">
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-white dark:bg-zinc-900 p-4 sm:p-5 flex flex-col gap-4 shadow-sm dark:shadow-none">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
                 Contract Source
@@ -140,7 +140,7 @@ export default function Home() {
               onChange={(e) => setContractCode(e.target.value)}
               placeholder={PLACEHOLDER}
               spellCheck={false}
-              className="h-72 w-full resize-y rounded-xl border border-zinc-200 dark:border-zinc-700/50 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-300 dark:placeholder-zinc-700 outline-none focus:border-violet-400 dark:focus:border-violet-500/60 focus:ring-1 focus:ring-violet-400/30 dark:focus:ring-violet-500/30 transition-all"
+              className="h-48 sm:h-72 w-full resize-y rounded-xl border border-zinc-200 dark:border-zinc-700/50 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-300 dark:placeholder-zinc-700 outline-none focus:border-violet-400 dark:focus:border-violet-500/60 focus:ring-1 focus:ring-violet-400/30 dark:focus:ring-violet-500/30 transition-all"
             />
 
             <div className="flex items-center justify-between gap-3">
