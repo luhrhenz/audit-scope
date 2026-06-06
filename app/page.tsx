@@ -34,50 +34,105 @@ contract SimpleVault {
     }
 }`;
 
+type InputMode = "paste" | "github";
+
 export default function Home() {
+  const [inputMode, setInputMode] = useState<InputMode>("paste");
   const [contractCode, setContractCode] = useState("");
+  const [githubUrl, setGithubUrl] = useState("");
   const [report, setReport] = useState<AuditReport | null>(null);
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Analyzing…");
   const [error, setError] = useState<string | null>(null);
+  const [fetchedFiles, setFetchedFiles] = useState<string[]>([]);
+
+  async function runAnalysis(code: string) {
+    setLoadingLabel("Analyzing…");
+
+    window.pendo?.track("Generate scope clicks", {
+      contractLines: code.split("\n").length,
+      contractChars: code.length,
+    });
+
+    const res = await fetch("/api/scope", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contract: code }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error ?? "An unknown error occurred.");
+    }
+
+    setActiveModel(data._model ?? null);
+    setReport(data);
+
+    window.pendo?.track("Audit reports generated", {
+      model: data._model,
+      riskCount: data.riskAreas?.length ?? 0,
+      highCount:
+        data.riskAreas?.filter(
+          (r: { severity: string }) => r.severity === "high"
+        ).length ?? 0,
+    });
+  }
 
   async function handleGenerate() {
     if (!contractCode.trim()) return;
     setLoading(true);
     setError(null);
     setReport(null);
-
-    // Track button click
-    window.pendo?.track("Generate scope clicks", {
-      contractLines: contractCode.split("\n").length,
-      contractChars: contractCode.length,
-    });
+    setFetchedFiles([]);
 
     try {
-      const res = await fetch("/api/scope", {
+      await runAnalysis(contractCode);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Network error — check your connection."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleScanRepo() {
+    if (!githubUrl.trim()) return;
+    setLoading(true);
+    setLoadingLabel("Fetching contracts…");
+    setError(null);
+    setReport(null);
+    setFetchedFiles([]);
+
+    window.pendo?.track("GitHub repo scan", { url: githubUrl.trim() });
+
+    try {
+      const fetchRes = await fetch("/api/fetch-repo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contract: contractCode }),
+        body: JSON.stringify({ url: githubUrl.trim() }),
       });
 
-      const data = await res.json();
+      const fetchData = await fetchRes.json();
 
-      if (!res.ok) {
-        setError(data.error ?? "An unknown error occurred.");
-        return;
+      if (!fetchRes.ok) {
+        throw new Error(fetchData.error ?? "Failed to fetch repository.");
       }
 
-      setActiveModel(data._model ?? null);
-      setReport(data);
+      setFetchedFiles(fetchData.files ?? []);
 
-      // Track successful report generation
-      window.pendo?.track("Audit reports generated", {
-        model: data._model,
-        riskCount: data.riskAreas?.length ?? 0,
-        highCount: data.riskAreas?.filter((r: { severity: string }) => r.severity === "high").length ?? 0,
+      window.pendo?.track("GitHub contracts fetched", {
+        fileCount: fetchData.fileCount,
+        url: githubUrl.trim(),
       });
-    } catch {
-      setError("Network error — check your connection and try again.");
+
+      await runAnalysis(fetchData.code);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Network error — check your connection."
+      );
     } finally {
       setLoading(false);
     }
@@ -86,10 +141,15 @@ export default function Home() {
   function handleClear() {
     window.pendo?.track("Clear");
     setContractCode("");
+    setGithubUrl("");
     setReport(null);
     setActiveModel(null);
     setError(null);
+    setFetchedFiles([]);
   }
+
+  const canSubmitPaste = !loading && !!contractCode.trim();
+  const canSubmitGithub = !loading && !!githubUrl.trim();
 
   return (
     <div className="relative min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans">
@@ -104,7 +164,9 @@ export default function Home() {
                 A
               </div>
               <div>
-                <span className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">AuditScope</span>
+                <span className="text-sm font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+                  AuditScope
+                </span>
                 <span className="ml-2 hidden text-[10px] text-zinc-400 dark:text-zinc-500 lg:inline">
                   Smart Contract Audit Scoping Tool
                 </span>
@@ -129,65 +191,171 @@ export default function Home() {
               Generate Your Audit Scope
             </h1>
             <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-500">
-              Paste a Solidity contract below. Get a structured vulnerability report in seconds.
+              Paste a Solidity contract or point to a GitHub repo. Get a
+              structured vulnerability report in seconds.
             </p>
           </div>
 
           {/* Input Section */}
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-700/60 bg-white dark:bg-zinc-900 p-4 sm:p-5 flex flex-col gap-4 shadow-sm dark:shadow-none">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-                Contract Source
-              </label>
-              {contractCode && (
+            {/* Mode Tabs */}
+            <div className="flex items-center gap-2">
+              <div className="flex gap-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 p-0.5 text-xs">
+                <button
+                  onClick={() => setInputMode("paste")}
+                  className={`rounded-md px-3 py-1.5 font-medium transition-colors ${
+                    inputMode === "paste"
+                      ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                  }`}
+                >
+                  Paste Code
+                </button>
+                <button
+                  onClick={() => setInputMode("github")}
+                  className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+                    inputMode === "github"
+                      ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+                  }`}
+                >
+                  <svg
+                    viewBox="0 0 16 16"
+                    className="h-3.5 w-3.5 fill-current"
+                    aria-hidden="true"
+                  >
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                  </svg>
+                  GitHub URL
+                </button>
+              </div>
+
+              {(contractCode || githubUrl || report) && (
                 <button
                   onClick={handleClear}
-                  className="text-[11px] text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                  className="ml-auto text-[11px] text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
                 >
                   Clear
                 </button>
               )}
             </div>
 
-            <textarea
-              value={contractCode}
-              onChange={(e) => {
-                const prev = contractCode;
-                setContractCode(e.target.value);
-                // Track first time user pastes/types a contract
-                if (!prev && e.target.value) {
-                  window.pendo?.track("Contract Input");
-                }
-              }}
-              placeholder={PLACEHOLDER}
-              spellCheck={false}
-              className="h-48 sm:h-72 w-full resize-y rounded-xl border border-zinc-200 dark:border-zinc-700/50 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-300 dark:placeholder-zinc-700 outline-none focus:border-violet-400 dark:focus:border-violet-500/60 focus:ring-1 focus:ring-violet-400/30 dark:focus:ring-violet-500/30 transition-all"
-            />
+            {/* Paste Code mode */}
+            {inputMode === "paste" && (
+              <>
+                <textarea
+                  value={contractCode}
+                  onChange={(e) => {
+                    const prev = contractCode;
+                    setContractCode(e.target.value);
+                    if (!prev && e.target.value) {
+                      window.pendo?.track("Contract Input");
+                    }
+                  }}
+                  placeholder={PLACEHOLDER}
+                  spellCheck={false}
+                  className="h-48 sm:h-72 w-full resize-y rounded-xl border border-zinc-200 dark:border-zinc-700/50 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 font-mono text-xs text-zinc-800 dark:text-zinc-200 placeholder-zinc-300 dark:placeholder-zinc-700 outline-none focus:border-violet-400 dark:focus:border-violet-500/60 focus:ring-1 focus:ring-violet-400/30 dark:focus:ring-violet-500/30 transition-all"
+                />
 
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] text-zinc-400 dark:text-zinc-600">
-                {contractCode.length > 0
-                  ? `${contractCode.split("\n").length} lines · ${contractCode.length} chars`
-                  : "Supports Solidity 0.4.x – 0.8.x"}
-              </p>
-              <button
-                onClick={handleGenerate}
-                disabled={loading || !contractCode.trim()}
-                className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-violet-900/30 transition-all hover:bg-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {loading ? (
-                  <>
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    Analyzing…
-                  </>
-                ) : (
-                  <>
-                    <span>⚡</span>
-                    Generate Scope
-                  </>
-                )}
-              </button>
-            </div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-600">
+                    {contractCode.length > 0
+                      ? `${contractCode.split("\n").length} lines · ${contractCode.length} chars`
+                      : "Supports Solidity 0.4.x – 0.8.x"}
+                  </p>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={!canSubmitPaste}
+                    className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-violet-900/30 transition-all hover:bg-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {loading ? (
+                      <>
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        {loadingLabel}
+                      </>
+                    ) : (
+                      <>
+                        <span>⚡</span>
+                        Generate Scope
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* GitHub URL mode */}
+            {inputMode === "github" && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="url"
+                    value={githubUrl}
+                    onChange={(e) => setGithubUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && canSubmitGithub) handleScanRepo();
+                    }}
+                    placeholder="https://github.com/owner/repo"
+                    spellCheck={false}
+                    className="w-full rounded-xl border border-zinc-200 dark:border-zinc-700/50 bg-zinc-50 dark:bg-zinc-950 px-4 py-3 text-sm text-zinc-800 dark:text-zinc-200 placeholder-zinc-300 dark:placeholder-zinc-700 outline-none focus:border-violet-400 dark:focus:border-violet-500/60 focus:ring-1 focus:ring-violet-400/30 dark:focus:ring-violet-500/30 transition-all"
+                  />
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-600 pl-1">
+                    Supports full repos, branches, subfolders, or single{" "}
+                    <code className="font-mono">.sol</code> files — public repos only
+                  </p>
+                </div>
+
+                {/* URL examples */}
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    "owner/repo",
+                    "owner/repo/tree/main/contracts",
+                    "owner/repo/blob/main/Token.sol",
+                  ].map((ex) => (
+                    <button
+                      key={ex}
+                      onClick={() =>
+                        setGithubUrl(`https://github.com/${ex}`)
+                      }
+                      className="rounded-md border border-zinc-200 dark:border-zinc-700/50 bg-zinc-50 dark:bg-zinc-800/60 px-2.5 py-1 font-mono text-[10px] text-zinc-400 dark:text-zinc-500 hover:text-violet-600 dark:hover:text-violet-400 hover:border-violet-300 dark:hover:border-violet-500/40 transition-colors"
+                    >
+                      {ex}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] text-zinc-400 dark:text-zinc-600">
+                    {loading
+                      ? loadingLabel
+                      : "Up to 20 .sol files · max 80 KB combined"}
+                  </p>
+                  <button
+                    onClick={handleScanRepo}
+                    disabled={!canSubmitGithub}
+                    className="flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-violet-900/30 transition-all hover:bg-violet-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {loading ? (
+                      <>
+                        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                        {loadingLabel}
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          viewBox="0 0 16 16"
+                          className="h-3.5 w-3.5 fill-current"
+                          aria-hidden="true"
+                        >
+                          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                        </svg>
+                        Scan Repository
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Error */}
@@ -201,17 +369,41 @@ export default function Home() {
           {/* Report */}
           {report && (
             <div className="flex flex-col gap-5">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">Vulnerability Report</h2>
-                {activeModel && (
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                      <span className="text-zinc-600 dark:text-zinc-400 font-medium">{activeModel}</span>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                    Vulnerability Report
+                  </h2>
+                  {activeModel && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                      <span className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                        <span className="text-zinc-600 dark:text-zinc-400 font-medium">
+                          {activeModel}
+                        </span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Fetched files badge strip */}
+                {fetchedFiles.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] text-zinc-400 dark:text-zinc-500 shrink-0">
+                      {fetchedFiles.length} file{fetchedFiles.length !== 1 ? "s" : ""} scanned:
                     </span>
+                    {fetchedFiles.map((f) => (
+                      <span
+                        key={f}
+                        className="rounded px-2 py-0.5 text-[10px] font-mono bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700/60"
+                      >
+                        {f.split("/").pop()}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
+
               <ReportCard report={report} />
             </div>
           )}

@@ -144,17 +144,22 @@ function stripToJson(raw: string): string {
 }
 
 function repairJson(text: string): string {
-  // Remove trailing commas before ] or } — most common model output mistake
-  let out = text.replace(/,(\s*[}\]])/g, "$1");
+  // 1. Escape literal newlines/tabs inside JSON string values — models sometimes
+  //    emit raw control chars inside strings, which is invalid JSON.
+  let out = text.replace(/"((?:[^"\\]|\\.)*)"/g, (_: string, inner: string) =>
+    '"' + inner.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"'
+  );
 
-  // If JSON is truncated (max_tokens hit), close any unclosed structures
+  // 2. Remove trailing commas before ] or }
+  out = out.replace(/,(\s*[}\]])/g, "$1");
+
   try {
     JSON.parse(out);
     return out;
   } catch {
-    // Strip any trailing partial token (unclosed string, dangling comma, etc.)
+    // 3. Truncation recovery: strip trailing partial token then close open structures.
+    //    Use [\s\S]*$ (dotall) so it finds the last unclosed string across lines.
     out = out.replace(/,\s*$/, "").replace(/"[^"]*$/, "");
-    // Close unclosed arrays then objects
     const opens = (out.match(/\[/g) ?? []).length - (out.match(/\]/g) ?? []).length;
     const braces = (out.match(/\{/g) ?? []).length - (out.match(/\}/g) ?? []).length;
     for (let i = 0; i < Math.max(opens, 0); i++) out += "]";
