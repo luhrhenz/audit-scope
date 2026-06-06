@@ -128,13 +128,12 @@ function pickGroqModel(): string {
 
 function stripToJson(raw: string): string {
   let text = raw
-    .replace(/<think>[\s\S]*?<\/think>/gi, "") // closed think block
-    .replace(/<think>[\s\S]*/gi, "")           // unclosed think block (truncated output)
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*/gi, "")
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
 
-  // Extract outermost {...} in case there's any remaining preamble or postamble
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start !== -1 && end > start) {
@@ -142,6 +141,26 @@ function stripToJson(raw: string): string {
   }
 
   return text;
+}
+
+function repairJson(text: string): string {
+  // Remove trailing commas before ] or } — most common model output mistake
+  let out = text.replace(/,(\s*[}\]])/g, "$1");
+
+  // If JSON is truncated (max_tokens hit), close any unclosed structures
+  try {
+    JSON.parse(out);
+    return out;
+  } catch {
+    // Strip any trailing partial token (unclosed string, dangling comma, etc.)
+    out = out.replace(/,\s*$/, "").replace(/"[^"]*$/, "");
+    // Close unclosed arrays then objects
+    const opens = (out.match(/\[/g) ?? []).length - (out.match(/\]/g) ?? []).length;
+    const braces = (out.match(/\{/g) ?? []).length - (out.match(/\}/g) ?? []).length;
+    for (let i = 0; i < Math.max(opens, 0); i++) out += "]";
+    for (let i = 0; i < Math.max(braces, 0); i++) out += "}";
+    return out;
+  }
 }
 
 async function callGroq(contract: string, model: string): Promise<string> {
@@ -158,7 +177,7 @@ async function callGroq(contract: string, model: string): Promise<string> {
         { role: "user", content: `Analyze this Solidity contract and return the JSON report:\n\n${contract}` },
       ],
       temperature: 0.2,
-      max_tokens: model === "qwen/qwen3-32b" ? 3000 : 1800,
+      max_tokens: model === "qwen/qwen3-32b" ? 3000 : 2500,
     }),
   });
 
@@ -226,7 +245,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const report = JSON.parse(stripToJson(rawText));
+    const report = JSON.parse(repairJson(stripToJson(rawText)));
     return NextResponse.json({ ...report, _model: usedModel });
 
   } catch (err) {
