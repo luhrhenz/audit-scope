@@ -250,7 +250,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const report = JSON.parse(repairJson(stripToJson(rawText)));
+    const stripped = stripToJson(rawText);
+    if (!stripped) {
+      throw new Error("The AI model returned an empty response — please try again.");
+    }
+
+    const report = JSON.parse(repairJson(stripped));
     return NextResponse.json({ ...report, _model: usedModel });
 
   } catch (err) {
