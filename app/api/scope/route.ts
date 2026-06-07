@@ -144,11 +144,48 @@ function stripToJson(raw: string): string {
 }
 
 function repairJson(text: string): string {
-  // 1. Escape literal newlines/tabs inside JSON string values — models sometimes
-  //    emit raw control chars inside strings, which is invalid JSON.
-  let out = text.replace(/"((?:[^"\\]|\\.)*)"/g, (_: string, inner: string) =>
-    '"' + inner.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t") + '"'
-  );
+  // 1. State-machine pass: walk char-by-char so we know exactly when we're
+  //    inside a JSON string. Escape every control character we find there.
+  //    Regex alternation can silently fail when a lone \ precedes a newline,
+  //    so a state machine is the only reliable approach here.
+  let out = "";
+  let inStr = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) {
+      if (ch === "\\") {
+        const next = i + 1 < text.length ? text[i + 1] : "";
+        if (next === "\n" || next === "\r") {
+          // Lone \ before a real newline — not a valid JSON escape; treat as \n
+          out += "\\n";
+          i++; // skip the newline char
+          if (next === "\r" && i + 1 < text.length && text[i + 1] === "\n") i++; // \r\n
+        } else {
+          // Valid escape sequence — pass through unchanged (\", \\, \t, \uXXXX …)
+          out += ch;
+          if (i + 1 < text.length) out += text[++i];
+        }
+      } else if (ch === '"') {
+        out += ch;
+        inStr = false;
+      } else if (ch === "\n") {
+        out += "\\n";
+      } else if (ch === "\r") {
+        out += "\\r";
+      } else if (ch === "\t") {
+        out += "\\t";
+      } else if (ch.charCodeAt(0) < 0x20) {
+        // Any other ASCII control char (NUL, BEL, BS, …)
+        out += `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
+      } else {
+        out += ch;
+      }
+    } else {
+      out += ch;
+      if (ch === '"') inStr = true;
+    }
+  }
 
   // 2. Remove trailing commas before ] or }
   out = out.replace(/,(\s*[}\]])/g, "$1");
@@ -157,13 +194,13 @@ function repairJson(text: string): string {
     JSON.parse(out);
     return out;
   } catch {
-    // 3. Truncation recovery: strip trailing partial token then close open structures.
-    //    Use [\s\S]*$ (dotall) so it finds the last unclosed string across lines.
+    // 3. Truncation recovery: after step 1 there are no bare newlines inside
+    //    strings, so [^"]* safely finds the last unclosed string token.
     out = out.replace(/,\s*$/, "").replace(/"[^"]*$/, "");
     const opens = (out.match(/\[/g) ?? []).length - (out.match(/\]/g) ?? []).length;
     const braces = (out.match(/\{/g) ?? []).length - (out.match(/\}/g) ?? []).length;
-    for (let i = 0; i < Math.max(opens, 0); i++) out += "]";
-    for (let i = 0; i < Math.max(braces, 0); i++) out += "}";
+    for (let j = 0; j < Math.max(opens, 0); j++) out += "]";
+    for (let j = 0; j < Math.max(braces, 0); j++) out += "}";
     return out;
   }
 }
