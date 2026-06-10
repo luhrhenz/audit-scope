@@ -100,7 +100,7 @@ export default function ReportCard({ report }: { report: AuditReport }) {
       <div className="lg:col-span-2">
         <Section title="Risk Areas" icon="⚠️">
           <div className="flex flex-col gap-3">
-            {report.riskAreas.map((r, i) => (
+            {(report.riskAreas ?? []).map((r, i) => (
               <div key={i} className={`rounded-lg border px-4 py-3 flex flex-col gap-2 ${SEVERITY_STYLES[r.severity] ?? SEVERITY_STYLES.low}`}>
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:flex-wrap sm:gap-2">
                   <div className="flex items-center gap-2">
@@ -130,7 +130,7 @@ export default function ReportCard({ report }: { report: AuditReport }) {
       {/* Attack Surface */}
       <Section title="Attack Surface" icon="🔌">
         <div className="flex flex-col gap-2">
-          {report.attackSurface.map((fn, i) => (
+          {(report.attackSurface ?? []).map((fn, i) => (
             <InnerCard key={i}>
               <div className="flex items-center gap-2 flex-wrap">
                 <code className="text-xs font-bold text-violet-600 dark:text-violet-400">{fn.function}()</code>
@@ -168,7 +168,7 @@ export default function ReportCard({ report }: { report: AuditReport }) {
       {/* Key Variables */}
       <Section title="Key Variables & State" icon="🗄️">
         <div className="flex flex-col gap-2">
-          {report.keyVariables.map((v, i) => (
+          {(report.keyVariables ?? []).map((v, i) => (
             <InnerCard key={i}>
               <div className="flex items-center gap-2">
                 <code className="text-xs font-bold text-cyan-600 dark:text-cyan-400">{v.name}</code>
@@ -183,7 +183,7 @@ export default function ReportCard({ report }: { report: AuditReport }) {
       {/* Audit Focus */}
       <Section title="Suggested Audit Focus" icon="🎯">
         <ol className="flex flex-col gap-1.5">
-          {report.auditFocus.map((item, i) => (
+          {(report.auditFocus ?? []).map((item, i) => (
             <li key={i} className="flex items-start gap-2 text-sm text-zinc-700 dark:text-zinc-300">
               <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-600/20 text-[10px] font-bold text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-500/30">
                 {i + 1}
@@ -198,7 +198,7 @@ export default function ReportCard({ report }: { report: AuditReport }) {
       <div className="lg:col-span-2">
         <Section title="Vulnerability Patterns" icon="🛡️">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            {report.vulnerabilityPatterns.map((v, i) => (
+            {(report.vulnerabilityPatterns ?? []).map((v, i) => (
               <div
                 key={i}
                 className={`rounded-lg px-3 py-2 border ${

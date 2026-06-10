@@ -45,10 +45,15 @@ export default function RootLayout({
             z=e.getElementsByTagName(n)[0];z.parentNode.insertBefore(y,z);
             })(window,document,'script','pendo');
 
-            var vid = localStorage.getItem('_as_vid');
-            if (!vid) {
-              vid = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-              localStorage.setItem('_as_vid', vid);
+            var vid;
+            try {
+              vid = localStorage.getItem('_as_vid');
+              if (!vid) {
+                vid = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+                localStorage.setItem('_as_vid', vid);
+              }
+            } catch(e) {
+              vid = 'anon-' + Math.random().toString(36).slice(2);
             }
 
             pendo.initialize({

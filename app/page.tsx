@@ -1,9 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ReportCard, { AuditReport } from "@/components/ReportCard";
 import ParticlesBackground from "@/components/ParticlesBackground";
 import ThemeToggle from "@/components/ThemeToggle";
+import SplashScreen from "@/components/SplashScreen";
+
+const LOADING_MESSAGES = [
+  "Mapping attack surface…",
+  "Tracing state machines…",
+  "Auditing access controls…",
+  "Checking CEI pattern…",
+  "Scoring risk areas…",
+  "Generating report…",
+];
 
 const PLACEHOLDER = `// Paste your Solidity contract here
 // Example:
@@ -37,15 +47,28 @@ contract SimpleVault {
 type InputMode = "paste" | "github";
 
 export default function Home() {
+  const [showSplash, setShowSplash] = useState(true);
   const [inputMode, setInputMode] = useState<InputMode>("paste");
   const [contractCode, setContractCode] = useState("");
   const [githubUrl, setGithubUrl] = useState("");
   const [report, setReport] = useState<AuditReport | null>(null);
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadingLabel, setLoadingLabel] = useState("Analyzing…");
+  const [loadingLabel, setLoadingLabel] = useState(LOADING_MESSAGES[0]);
   const [error, setError] = useState<string | null>(null);
   const [fetchedFiles, setFetchedFiles] = useState<string[]>([]);
+
+  // Cycle loading messages while analysis is in progress
+  useEffect(() => {
+    if (!loading) return;
+    setLoadingLabel(LOADING_MESSAGES[0]);
+    let idx = 0;
+    const id = setInterval(() => {
+      idx = (idx + 1) % LOADING_MESSAGES.length;
+      setLoadingLabel(LOADING_MESSAGES[idx]);
+    }, 2200);
+    return () => clearInterval(id);
+  }, [loading]);
 
   async function runAnalysis(code: string) {
     setLoadingLabel("Analyzing…");
@@ -65,33 +88,40 @@ export default function Home() {
       body: JSON.stringify({ contract: code }),
     });
 
-    const data = await res.json();
+    let data: Record<string, unknown>;
+    try {
+      data = await res.json();
+    } catch {
+      throw new Error("The server returned an unexpected response. Please try again.");
+    }
 
     if (!res.ok) {
+      const errMsg = typeof data.error === "string" ? data.error : "An unknown error occurred.";
       window.pendo?.track("audit_report_generation_failed", {
-        errorMessage: data.error ?? "Unknown error",
+        errorMessage: errMsg,
         errorType: "api_error",
         contractLength,
         lineCount,
       });
-      throw new Error(data.error ?? "An unknown error occurred.");
+      throw new Error(errMsg);
     }
 
-    setActiveModel(data._model ?? null);
-    setReport(data);
+    const report = data as unknown as AuditReport & { _model?: string };
+    setActiveModel(report._model ?? null);
+    setReport(report);
 
-    const riskAreas: Array<{ severity: string }> = data.riskAreas ?? [];
+    const riskAreas: Array<{ severity: string }> = report.riskAreas ?? [];
     window.pendo?.track("audit_report_generated", {
-      modelUsed: data._model,
+      modelUsed: report._model,
       riskAreaCount: riskAreas.length,
       highSeverityCount: riskAreas.filter((r) => r.severity === "high").length,
       mediumSeverityCount: riskAreas.filter((r) => r.severity === "medium").length,
       lowSeverityCount: riskAreas.filter((r) => r.severity === "low").length,
-      attackSurfaceCount: data.attackSurface?.length ?? 0,
+      attackSurfaceCount: report.attackSurface?.length ?? 0,
       vulnerabilityPatternsDetectedCount:
-        (data.vulnerabilityPatterns ?? []).filter((v: { present: boolean }) => v.present).length,
-      keyVariablesCount: data.keyVariables?.length ?? 0,
-      auditFocusCount: data.auditFocus?.length ?? 0,
+        (report.vulnerabilityPatterns ?? []).filter((v: { present: boolean }) => v.present).length,
+      keyVariablesCount: report.keyVariables?.length ?? 0,
+      auditFocusCount: report.auditFocus?.length ?? 0,
       contractLength,
       lineCount,
     });
@@ -140,20 +170,25 @@ export default function Home() {
         body: JSON.stringify({ url: githubUrl.trim() }),
       });
 
-      const fetchData = await fetchRes.json();
-
-      if (!fetchRes.ok) {
-        throw new Error(fetchData.error ?? "Failed to fetch repository.");
+      let fetchData: Record<string, unknown>;
+      try {
+        fetchData = await fetchRes.json();
+      } catch {
+        throw new Error("The server returned an unexpected response. Please try again.");
       }
 
-      setFetchedFiles(fetchData.files ?? []);
+      if (!fetchRes.ok) {
+        throw new Error(typeof fetchData.error === "string" ? fetchData.error : "Failed to fetch repository.");
+      }
+
+      setFetchedFiles(Array.isArray(fetchData.files) ? (fetchData.files as string[]) : []);
 
       window.pendo?.track("GitHub contracts fetched", {
         fileCount: fetchData.fileCount,
         url: githubUrl.trim(),
       });
 
-      await runAnalysis(fetchData.code);
+      await runAnalysis(typeof fetchData.code === "string" ? fetchData.code : "");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Network error — check your connection."
@@ -176,7 +211,13 @@ export default function Home() {
   const canSubmitPaste = !loading && !!contractCode.trim();
   const canSubmitGithub = !loading && !!githubUrl.trim();
 
+  const highCount   = report?.riskAreas.filter(r => r.severity === "high").length   ?? 0;
+  const mediumCount = report?.riskAreas.filter(r => r.severity === "medium").length ?? 0;
+  const lowCount    = report?.riskAreas.filter(r => r.severity === "low").length    ?? 0;
+
   return (
+    <>
+      {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
     <div className="relative min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans">
       <ParticlesBackground />
 
@@ -429,6 +470,26 @@ export default function Home() {
                 )}
               </div>
 
+              {/* Severity summary */}
+              <div className="flex gap-3 flex-wrap">
+                <div className="flex items-center gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5">
+                  <span className="text-2xl font-black text-red-500 leading-none">{highCount}</span>
+                  <span className="text-[11px] font-bold text-red-400 uppercase tracking-widest">High</span>
+                </div>
+                <div className="flex items-center gap-2.5 rounded-xl border border-yellow-500/30 bg-yellow-500/8 px-4 py-2.5">
+                  <span className="text-2xl font-black text-yellow-500 leading-none">{mediumCount}</span>
+                  <span className="text-[11px] font-bold text-yellow-400 uppercase tracking-widest">Medium</span>
+                </div>
+                <div className="flex items-center gap-2.5 rounded-xl border border-green-500/30 bg-green-500/8 px-4 py-2.5">
+                  <span className="text-2xl font-black text-green-500 leading-none">{lowCount}</span>
+                  <span className="text-[11px] font-bold text-green-400 uppercase tracking-widest">Low</span>
+                </div>
+                <div className="ml-auto flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700/60 bg-white dark:bg-zinc-900 px-4 py-2.5">
+                  <span className="text-2xl font-black text-zinc-700 dark:text-zinc-200 leading-none">{highCount + mediumCount + lowCount}</span>
+                  <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest">Total Findings</span>
+                </div>
+              </div>
+
               <ReportCard report={report} />
             </div>
           )}
@@ -439,5 +500,6 @@ export default function Home() {
         </footer>
       </div>
     </div>
+    </>
   );
 }

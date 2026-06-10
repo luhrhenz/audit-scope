@@ -138,6 +138,12 @@ export async function POST(req: NextRequest) {
     let solFiles: Array<{ path: string; content: string }>;
 
     if (parsed.kind === "blob") {
+      if (!parsed.subPath.endsWith(".sol")) {
+        return NextResponse.json(
+          { error: "Only Solidity (.sol) files are supported. Please link to a .sol file." },
+          { status: 400 }
+        );
+      }
       const branch = parsed.branch ?? "main";
       const rawUrl = `https://raw.githubusercontent.com/${parsed.owner}/${parsed.repo}/${branch}/${parsed.subPath}`;
       const res = await fetch(rawUrl, { headers: ghHeaders() });

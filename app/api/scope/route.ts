@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { jsonrepair } from "jsonrepair";
 
 const SYSTEM_PROMPT = `You are an elite smart contract security auditor trained on thousands of real audit reports from Code4rena, Sherlock, and Immunefi. Your job is to find real, specific, exploitable vulnerabilities — not generic security advice.
+
+ANALYSIS BOUNDARY — READ THIS FIRST:
+- Analyze ONLY the exact Solidity code provided. Every finding MUST name a real function, variable, or code construct present in that code.
+- NEVER invent vulnerabilities. If a pattern is not present in the provided code, mark it NOT PRESENT with your reasoning.
+- If the code is a Foundry/Hardhat test file (imports Test.sol, uses vm.prank, assertEq, etc.), analyze it as-is and infer the contract structure from the test behaviour.
+- A short, accurate report beats a long hallucinated one. Do not pad findings to seem thorough.
+- If the contract is simple and genuinely has few issues, say so. "No issues found" for a pattern is a valid and correct answer.
 
 INTERNAL REASONING PROCESS (think through all of this before writing JSON):
 
@@ -143,67 +151,6 @@ function stripToJson(raw: string): string {
   return text;
 }
 
-function repairJson(text: string): string {
-  // 1. State-machine pass: walk char-by-char so we know exactly when we're
-  //    inside a JSON string. Escape every control character we find there.
-  //    Regex alternation can silently fail when a lone \ precedes a newline,
-  //    so a state machine is the only reliable approach here.
-  let out = "";
-  let inStr = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inStr) {
-      if (ch === "\\") {
-        const next = i + 1 < text.length ? text[i + 1] : "";
-        if (next === "\n" || next === "\r") {
-          // Lone \ before a real newline — not a valid JSON escape; treat as \n
-          out += "\\n";
-          i++; // skip the newline char
-          if (next === "\r" && i + 1 < text.length && text[i + 1] === "\n") i++; // \r\n
-        } else {
-          // Valid escape sequence — pass through unchanged (\", \\, \t, \uXXXX …)
-          out += ch;
-          if (i + 1 < text.length) out += text[++i];
-        }
-      } else if (ch === '"') {
-        out += ch;
-        inStr = false;
-      } else if (ch === "\n") {
-        out += "\\n";
-      } else if (ch === "\r") {
-        out += "\\r";
-      } else if (ch === "\t") {
-        out += "\\t";
-      } else if (ch.charCodeAt(0) < 0x20) {
-        // Any other ASCII control char (NUL, BEL, BS, …)
-        out += `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
-      } else {
-        out += ch;
-      }
-    } else {
-      out += ch;
-      if (ch === '"') inStr = true;
-    }
-  }
-
-  // 2. Remove trailing commas before ] or }
-  out = out.replace(/,(\s*[}\]])/g, "$1");
-
-  try {
-    JSON.parse(out);
-    return out;
-  } catch {
-    // 3. Truncation recovery: after step 1 there are no bare newlines inside
-    //    strings, so [^"]* safely finds the last unclosed string token.
-    out = out.replace(/,\s*$/, "").replace(/"[^"]*$/, "");
-    const opens = (out.match(/\[/g) ?? []).length - (out.match(/\]/g) ?? []).length;
-    const braces = (out.match(/\{/g) ?? []).length - (out.match(/\}/g) ?? []).length;
-    for (let j = 0; j < Math.max(opens, 0); j++) out += "]";
-    for (let j = 0; j < Math.max(braces, 0); j++) out += "}";
-    return out;
-  }
-}
 
 async function callGroq(contract: string, model: string): Promise<string> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -258,9 +205,9 @@ async function callGemini(contract: string): Promise<string> {
 
 export async function POST(req: NextRequest) {
   try {
-    const { contract } = await req.json();
+    const { contract } = await req.json().catch(() => ({}));
 
-    if (!contract || contract.trim() === "") {
+    if (!contract || typeof contract !== "string" || contract.trim() === "") {
       return NextResponse.json({ error: "No contract provided" }, { status: 400 });
     }
 
@@ -292,7 +239,7 @@ export async function POST(req: NextRequest) {
       throw new Error("The AI model returned an empty response — please try again.");
     }
 
-    const report = JSON.parse(repairJson(stripped));
+    const report = JSON.parse(jsonrepair(stripped));
     return NextResponse.json({ ...report, _model: usedModel });
 
   } catch (err) {
